@@ -57,16 +57,18 @@ cluster := NewCluster(config)
 go func() {
   for acquisition := range config.Acquisitions {
     // Do whatever needs to be done in here
-    node := <-cluster.MembersForPartition(acquisition.Partition)
-    fmt.Sprintf("Partition %d is now the leader for partition %d", node, acquisition.Partition)
+    if acquisition.From != nil {
+      fmt.Sprintf("Acquired partition %d, replica %d from %s", acquisition.Partition, acquisition.Replica, acquisition.From.Name)
+    }
   }
 }()
 
 go func() {
   for release := range config.Releases {
     // Do whatever needs to be done in here
-    node := <-cluster.MembersForPartition(acquisition.Partition)
-    fmt.Sprintf("%v is no longer the leader for partition %d", node, acquisition.Partition)
+    if acquisition.To != nil {
+      fmt.Sprintf("Release partition %d, replica %d to %s", acquisition.Partition, acquisition.Replica, acquisition.To.Name)
+    }
   }
 }()
 
