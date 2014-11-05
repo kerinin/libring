@@ -8,6 +8,44 @@ when nodes enter or leave the cluster.  Cluster topology changes are exposed as
 a channel of acquire/release events.
 
 
+## Design
+
+### Membership
+
+`libring` uses [Serf](https://www.serfdom.io/) for membership.  Serf is "a
+decentralized solution for cluster membership, failure detection, and
+orchestration".  Serf uses a p2p gossip protocol to maintain an
+eventually-consistent view of a set of nodes in a cluster.  
+
+Serf nodes can be tagged with arbitrary key/value pairs, and `libring` uses this
+metadata as a way to filter nodes.  The current state of all cluster members is
+kept in memory, but only members with a matching tag are used for resolving keys
+to members.
+
+
+### Key distribution
+
+`libring` uses the hashing algorithm described as 'Strategy 3' in the appendix
+of the [Amazon Dynamo
+Paper](http://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf).
+The keyspace is statically mapped to a fixed number of partitions.  Partitions
+are assigned to nodes using a consistent hashing algorithm that minimizes
+partition relocations under membership changes.  Replication is accomplished by
+picking N adjacent nodes along the 'ring' for each partition.
+
+Keys are mapped to partitions by hashing the key name using the FNV32a hash
+algorithm, then modding by the partition count to produce an integer partition
+identifier.
+
+Partitions are mapped to nodes using [Google's "jump" consistent hash
+algorithm](http://arxiv.org/abs/1406.2294).  Node names are sorted alphabetically,
+and the resulting array is indexed into using the hashed partition identifier. 
+Replicas are assigned by incrementing the index by the replica index (0-N).  By
+'walking' the ring of nodes, a 'preference set' can be generated as described in
+the Dynamo paper (this can be useful for implementing 'sloppy-quorum' with
+hinted handoff, for example).
+
+
 ## Use
 
 First, configure the cluster
