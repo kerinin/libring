@@ -17,7 +17,7 @@ config := libring.Config{
   // Specify a set of tag/values which must be present on a Serf member to be
   // treated as part of the cluster.  Allows multiple clusters to share members,
   // and allows members to communicate about their current state
-  WatchHosts: map[string]string{"ring": "1"},
+  WatchTags: map[string]*regexp.Regexp{"ring": regexp.MustCompile(`active`)},
   
   // Join the Serf cluster that these hosts are part of.  Can be pointed at a 
   // load balancer if you hostnames are dynamically assigned.
@@ -54,26 +54,30 @@ Now you can create a cluster and run it.
 ```go
 cluster := NewCluster(config)
 
-for acquisition := range config.Acquisitions {
-  // Do whatever needs to be done in here
-  node := <-cluster.MembersForPartition(acquisition.Partition)
-  fmt.Sprintf("Partition %d is now the leader for partition %d", node, acquisition.Partition)
-}
+go func() {
+  for acquisition := range config.Acquisitions {
+    // Do whatever needs to be done in here
+    node := <-cluster.MembersForPartition(acquisition.Partition)
+    fmt.Sprintf("Partition %d is now the leader for partition %d", node, acquisition.Partition)
+  }
+}()
 
-for release := range config.Releases {
-  // Do whatever needs to be done in here
-  node := <-cluster.MembersForPartition(acquisition.Partition)
-  fmt.Sprintf("%v is no longer the leader for partition %d", node, acquisition.Partition)
-}
+go func() {
+  for release := range config.Releases {
+    // Do whatever needs to be done in here
+    node := <-cluster.MembersForPartition(acquisition.Partition)
+    fmt.Sprintf("%v is no longer the leader for partition %d", node, acquisition.Partition)
+  }
+}()
 
 // If this host should be part of the cluster, update its tags.
 cluster.SetTags(map[string]string{"ring": "1"})
 
-cluster.Run()
+go cluster.Run()
 ```
 
 This will fire up Serf and start talking to the other machines in the cluster.
-Now, maybe you want so use your shiny new cluster
+Now you can use your shiny new cluster to route requests to nodes
 
 ```go
 http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -81,7 +85,10 @@ http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
   path := r.URL.Path
   nodeForPath := <-cluster.MembersForKey(path)
   
-  fmt.Fprintf(w, "%v is responsible for path %v", nodeForPath, path)
+  fmt.Printf("Proxying %s to node %v", path, nodeForPath)
+
+  proxy := httputil.NewSingleHostReverseProxy(nodeForPath.URL)
+  proxy.ServeHTTP(w, r)
 })
 
 log.Fatal(http.ListenAndServe(":8080", nil))
