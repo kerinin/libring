@@ -1,0 +1,10 @@
+bootstrap:
+  build: .
+
+node:
+  build: .
+  links:
+    - bootstrap
+
+  environment:
+    BOOTSTRAP_HOST: bootstrap
