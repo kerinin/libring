@@ -1,6 +1,7 @@
 package main
 
 import (
+	"time"
 	"os"
 	"regexp"
 
@@ -9,7 +10,7 @@ import (
 
 func main() {
 	config := libring.Config{
-		WatchTags: map[string]*regexp.Regexp{"ring": regexp.MustCompile(`/.*/`)},
+		WatchTags: map[string]*regexp.Regexp{"ring": regexp.MustCompile(`active`)},
 		Partitions: 8,
 		Redundancy: 2,
 		Acquisitions: make(chan libring.AcquireEvent),
@@ -42,10 +43,16 @@ func main() {
 		}
 	}()
 
-	// If this host should be part of the cluster, update its tags.
-	cluster.SetTags(map[string]string{"ring": "1"})
+	go cluster.Run()
 
-	cluster.Run()
+	time.Sleep(2 * time.Second)
+	cluster.SetTags(map[string]string{"ring": "active"})
 
-	<-cluster.Exit
+	time.Sleep(2 * time.Second)
+	cluster.SetTags(map[string]string{"ring": "leaving"})
+
+	time.Sleep(2 * time.Second)
+	cluster.Stop()
+
+	logger.Info("Exiting")
 }

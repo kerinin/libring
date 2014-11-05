@@ -21,12 +21,12 @@ func (r Ring) String() string {
 	return fmt.Sprintf("%v", member_names)
 }
 
-func (r Ring) MembersForKey(key string) chan *serf.Member {
+func (r Ring) membersForKey(key string) chan *serf.Member {
 	partition := r.partitionForKey(key)
-	return r.MembersForPartition(partition)
+	return r.membersForPartition(partition)
 }
 
-func (r Ring) MembersForPartition(partition uint) chan *serf.Member {
+func (r Ring) membersForPartition(partition uint) chan *serf.Member {
 	outCh := make(chan *serf.Member)
 
 	if len(r.members) == 0 {
@@ -36,7 +36,7 @@ func (r Ring) MembersForPartition(partition uint) chan *serf.Member {
 
 	go func() {
 		for replica := 0; replica < len(r.members); replica++ {
-			if member := r.Member(partition, uint(replica)); member != nil {
+			if member := r.member(partition, uint(replica)); member != nil {
 				outCh <- member
 			}
 		}
@@ -46,7 +46,7 @@ func (r Ring) MembersForPartition(partition uint) chan *serf.Member {
 	return outCh
 }
 
-func (r Ring) Member(partition uint, replica uint) *serf.Member {
+func (r Ring) member(partition uint, replica uint) *serf.Member {
 	if len(r.members) == 0 {
 		return nil 
 	}

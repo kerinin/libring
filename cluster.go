@@ -8,7 +8,7 @@ import (
 )
 
 type Cluster struct {
-	Exit chan bool
+	exit chan bool
 	config      Config
 	memberMap   map[string]*serf.Member
 	ring *Ring
@@ -29,7 +29,7 @@ func NewCluster(config Config) *Cluster {
 	exit := make(chan bool)
 
 	return &Cluster{
-		Exit: exit,
+		exit: exit,
 		config:      config,
 		memberMap:   memberMap,
 		ring: ring,
@@ -39,28 +39,41 @@ func NewCluster(config Config) *Cluster {
 	}
 }
 
-func (c *Cluster) SetTags(tags map[string]string) {
+func (c *Cluster) SetTags(tags map[string]string) error {
+	logger.Info("Setting node tags: %v", tags)
+	return c.serf.SetTags(tags)
 }
 
 func (c *Cluster) Run() {
-	go func() {
-		for e := range c.serfEvents {
-			c.handleSerfEvent(e)
-		}
-	}()
-
+	logger.Info("Running node")
 	c.joinSerfCluster()
+
+	for {
+		select {
+		case e := <-c.serfEvents:
+			c.handleSerfEvent(e)
+		case <-c.exit:
+			c.exit <- true
+			return
+		}
+	}
 }
 
 func (c *Cluster) Stop() {
+	logger.Info("Stopping node")
+	c.leaveSerfCluster()
+	c.exit <- true
+	<-c.exit
 }
 
 func (c *Cluster) MembersForKey(key string) chan *serf.Member {
-	return c.ring.MembersForKey(key)
+	logger.Info("Getting members for key: %s", key)
+	return c.ring.membersForKey(key)
 }
 
 func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
-	return c.ring.MembersForPartition(partition)
+	logger.Info("Getting members for partition: %d", partition)
+	return c.ring.membersForPartition(partition)
 }
 
 func (c *Cluster) joinSerfCluster() {
@@ -69,10 +82,14 @@ func (c *Cluster) joinSerfCluster() {
 	}
 }
 
+func (c *Cluster) leaveSerfCluster() {
+	c.serf.Leave()
+}
+
 func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *Ring) {
 	for partition := uint(0); partition < c.config.Partitions; partition++ {
-		old_members := old_ring.MembersForPartition(partition)
-		new_members := new_ring.MembersForPartition(partition)
+		old_members := old_ring.membersForPartition(partition)
+		new_members := new_ring.membersForPartition(partition)
 
 		if c.config.Releases != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
@@ -85,7 +102,7 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *
 
 				if old_member != nil && old_member.Name == c.serf.LocalMember().Name {
 					// ...but isn't any longer
-					new_member := new_ring.Member(partition, replica)
+					new_member := new_ring.member(partition, replica)
 					if new_member == nil || new_member.Name != c.serf.LocalMember().Name {
 						event := ReleaseEvent{
 							Partition: partition,
@@ -111,12 +128,12 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *
 
 				if new_member != nil && new_member.Name == c.serf.LocalMember().Name {
 					// ...but didn't used to be
-					old_member := old_ring.Member(partition, replica)
+					old_member := old_ring.member(partition, replica)
 					if old_member == nil || old_member.Name != c.serf.LocalMember().Name {
 						event := AcquireEvent{
 							Partition: partition,
 							Replica: replica,
-							From: old_ring.Member(partition, replica),
+							From: old_ring.member(partition, replica),
 							SerfEvent: event,
 						}
 
@@ -167,23 +184,23 @@ func (c *Cluster) removeEventMembers(e serf.Event) {
 func (c *Cluster) handleSerfEvent(e serf.Event) {
 	switch e.EventType() {
 	case serf.EventMemberJoin:
-		logger.Debug("Handling member join event", e.(serf.MemberEvent).Members)
+		logger.Debug("Handling member join event")
 		go c.addEventMembers(e)
 
 	case serf.EventMemberLeave:
-		logger.Debug("Handling graceful member exit event", e.(serf.MemberEvent))
+		logger.Debug("Handling graceful member exit event")
 		go c.removeEventMembers(e)
 
 	case serf.EventMemberFailed:
-		logger.Debug("Handling unresponsive member event", e.(serf.MemberEvent))
+		logger.Debug("Handling unresponsive member event")
 		go c.updateEventMembers(e)
 
 	case serf.EventMemberUpdate:
-		logger.Debug("Handling member metadata update event", e.(serf.MemberEvent))
+		logger.Debug("Handling member metadata update event")
 		go c.updateEventMembers(e)
 
 	case serf.EventMemberReap:
-		logger.Debug("Handling forced member exit event", e.(serf.MemberEvent))
+		logger.Debug("Handling forced member exit event")
 		go c.removeEventMembers(e)
 
 	default:
@@ -191,21 +208,41 @@ func (c *Cluster) handleSerfEvent(e serf.Event) {
 	}
 }
 
-// NOTE: Should probably return data for acquire/release streams
 func (c *Cluster) recomputeRing() {
-	keys := make([]string, len(c.memberMap), len(c.memberMap))
-	i := 0
-	for k, _ := range c.memberMap {
-		keys[i] = k
-		i++
+	keys := make([]string, 0, len(c.memberMap))
+	for k, member := range c.memberMap {
+		if c.hasWatchedTag(member) {
+			keys = append(keys, k)
+		}
 	}
+
+	members := make([]*serf.Member, len(keys), len(keys))
+	if len(keys) == 0 {
+		c.ring = &Ring{members: members}
+		return
+	}
+
 	sort.StringSlice(keys).Sort()
 
-	members := make([]*serf.Member, len(c.memberMap), len(c.memberMap))
 	for i, k := range keys {
 		members[i], _ = c.memberMap[k]
 	}
 
 	c.ring = &Ring{members: members}
-	logger.Debug("Recomputed ring: %v", c.ring)
+}
+
+func (c *Cluster) hasWatchedTag(member *serf.Member) bool {
+	for tag, re := range c.config.WatchTags {
+		member_tag, ok := member.Tags[tag]
+		if !ok {
+			continue
+		}
+		if !re.MatchString(member_tag) {
+			continue
+		}
+
+		return true
+	}
+
+	return false
 }
