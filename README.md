@@ -66,7 +66,7 @@ go func() {
 go func() {
   for release := range config.Releases {
     // Do whatever needs to be done in here
-    if acquisition.To != nil {
+    if release.To != nil {
       fmt.Sprintf("Release partition %d, replica %d to %s", acquisition.Partition, acquisition.Replica, acquisition.To.Name)
     }
   }
