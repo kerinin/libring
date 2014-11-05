@@ -7,6 +7,10 @@ across nodes using a type of consistent hashing which minimizes data transfer
 when nodes enter or leave the cluster.  Cluster topology changes are exposed as
 a channel of acquire/release events.
 
+THIS HAS NOT BEEN TESTED AT SCALE!  Serf is a mature and well-tested system,
+however none of the rest of this codebase has been used in large-scale
+production systems.  Caveat emptor.
+
 
 ## Design
 
