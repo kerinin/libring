@@ -85,7 +85,20 @@ config := libring.Config{
   // Partitions will be assigned to this many hosts at any given point in time.
   // This represents a lower bound on the number of hosts you should have
   // running at any point in time.
-  Redundancy: 2
+  Redundancy: 2,
+
+  // The serf client will be created with this configuration, so if you need to 
+  // do anything unusual you can set it here.  Note that libring will specify
+  // the EventCh, specifying it in this config is an error.  (If you need to
+  // handle raw serf events, you can provide a channel to SerfEvents below)
+  SerfConfig: serf.DefaultConfig(),
+
+  // If provided, serf events will be pushed to this channel *after* they have
+  // been processed by libring.  Note that the same warning applies here as
+  // to serf.Config.EventCh: "Care must be taken that this channel doesn't 
+  // block, either by processing the events quick enough or buffering the 
+  // channel"
+  SerfEvents make(chan serf.Event),
 
   // Channels for receiving notifications when partitions are assigned to the
   // local machine or removed from the local machine.  Events contain the partition 
