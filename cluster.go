@@ -7,11 +7,12 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
+// The primary libring interface
 type Cluster struct {
-	exit chan bool
+	exit        chan bool
 	config      Config
 	memberMap   map[string]*serf.Member
-	ring *Ring
+	ring        *Ring
 	memberMutex sync.Mutex
 	serf        *serf.Serf
 	serfEvents  chan serf.Event
@@ -29,21 +30,25 @@ func NewCluster(config Config) *Cluster {
 	exit := make(chan bool)
 
 	return &Cluster{
-		exit: exit,
+		exit:        exit,
 		config:      config,
 		memberMap:   memberMap,
-		ring: ring,
+		ring:        ring,
 		memberMutex: memberMutex,
 		serfEvents:  serfEvents,
 		serf:        nodeSerf,
 	}
 }
 
+// Sets serf metadata.
+// See http://godoc.org/github.com/hashicorp/serf/serf#Serf.SetTags for more
+// information
 func (c *Cluster) SetTags(tags map[string]string) error {
 	logger.Info("Setting node tags: %v", tags)
 	return c.serf.SetTags(tags)
 }
 
+// Starts the Serf protocol and begins listening for Serf events.
 func (c *Cluster) Run() {
 	logger.Info("Running node")
 	c.joinSerfCluster()
@@ -59,6 +64,7 @@ func (c *Cluster) Run() {
 	}
 }
 
+// Gracefully leaves the Serf cluster and terminates background tasks
 func (c *Cluster) Stop() {
 	logger.Info("Stopping node")
 	c.leaveSerfCluster()
@@ -66,11 +72,19 @@ func (c *Cluster) Stop() {
 	<-c.exit
 }
 
+// Returns a channel of Serf members for a given key.  The first member in the
+// channel is "replica 0".  All members of the cluster (including failed nodes)
+// will be written to the channel once, then it will be closed.  Nodes which have
+// left the clsuter gracefully or have been reaped will not be included.
+//
+// The first N members in the channel can be seen as a key's "preference set" as
+// described in the dynamo paper.
 func (c *Cluster) MembersForKey(key string) chan *serf.Member {
 	logger.Info("Getting members for key: %s", key)
 	return c.ring.membersForKey(key)
 }
 
+// Same as MembersForKey, but takes a partition rather than a key
 func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
 	logger.Info("Getting members for partition: %d", partition)
 	return c.ring.membersForPartition(partition)
@@ -106,12 +120,12 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *
 					if new_member == nil || new_member.Name != c.serf.LocalMember().Name {
 						event := ReleaseEvent{
 							Partition: partition,
-							Replica: replica,
-							To: new_member,
+							Replica:   replica,
+							To:        new_member,
 							SerfEvent: event,
 						}
 
-						c.config.Releases <-  event
+						c.config.Releases <- event
 					}
 				}
 			}
@@ -132,8 +146,8 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *
 					if old_member == nil || old_member.Name != c.serf.LocalMember().Name {
 						event := AcquireEvent{
 							Partition: partition,
-							Replica: replica,
-							From: old_ring.member(partition, replica),
+							Replica:   replica,
+							From:      old_ring.member(partition, replica),
 							SerfEvent: event,
 						}
 

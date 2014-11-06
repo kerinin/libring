@@ -9,8 +9,13 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
+// Handles resolving a key/partition to an array of serf members such that the
+// mapping is maximally stable across cluster membership changes.
+//
+// Used both for fetching serf members and for detecting changes before & after
+// the cluster memberhsip changes.
 type Ring struct {
-	members     []*serf.Member
+	members []*serf.Member
 }
 
 func (r Ring) String() string {
@@ -48,7 +53,7 @@ func (r Ring) membersForPartition(partition uint) chan *serf.Member {
 
 func (r Ring) member(partition uint, replica uint) *serf.Member {
 	if len(r.members) == 0 {
-		return nil 
+		return nil
 	}
 	if uint(len(r.members)) <= replica {
 		return nil
