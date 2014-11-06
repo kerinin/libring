@@ -5,7 +5,7 @@ import (
 )
 
 var logger = logging.MustGetLogger("libring")
-var logFormat = logging.MustStringFormatter("[db] %{level} %{color}%{message}%{color:reset} [%{shortfile}]")
+var logFormat = logging.MustStringFormatter("[libring] %{level} %{color}%{message}%{color:reset} [%{shortfile}]")
 
 func init() {
 	logging.SetFormatter(logFormat)

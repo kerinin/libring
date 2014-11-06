@@ -1,8 +1,9 @@
 package libring
 
 import (
-	"os"
 	"regexp"
+
+	"github.com/hashicorp/serf/serf"
 )
 
 // Configuration values for the libring Cluster
@@ -10,15 +11,12 @@ type Config struct {
 	// Specify a set of tag/values which must be present on a Serf member to be
 	// treated as part of the cluster.  Allows multiple clusters to share members,
 	// and allows members to communicate about their current state
+	// Leave empty to use all members of the serf cluster
 	WatchTags map[string]*regexp.Regexp
 
 	// Join the Serf cluster that these hosts are part of.  Can be pointed at a
 	// load balancer if you hostnames are dynamically assigned.
 	BootstrapHosts []string
-
-	// Specifies the hostname to use for the local node.  Defaults to the
-	// OS-provided value
-	HostName string
 
 	// The number of partitions to divide the keyspace into.  This value should be
 	// an order of maginitude larger than the number of members you expect to
@@ -33,6 +31,19 @@ type Config struct {
 	// running at any point in time.
 	Redundancy uint
 
+	// The serf client will be created with this configuration, so if you need to 
+	// do anything unusual you can set it here.  Note that libring will specify
+	// the EventCh, specifying it in this config is an error.  (If you need to
+	// handle raw serf events, you can provide a channel to SerfEvents below)
+	SerfConfig *serf.Config
+
+	// If provided, serf events will be pushed to this channel *after* they have
+	// been processed by libring.  Note that the same warning applies here as
+	// to serf.Config.EventCh: "Care must be taken that this channel doesn't 
+	// block, either by processing the events quick enough or buffering the 
+	// channel"
+	SerfEvents chan serf.Event
+
 	// Channels for receiving notifications when partitions are assigned to the
 	// local machine or removed from the local machine.  Events contain the partition
 	// identifier, the 'other' Member, and the serf Event which triggered the
@@ -43,11 +54,11 @@ type Config struct {
 
 // Returns a Config with sane default values.
 func DefaultConfig() Config {
-	hostname, _ := os.Hostname()
+	serfConfig := serf.DefaultConfig()
 
 	return Config{
-		HostName:   hostname,
 		Partitions: 512,
 		Redundancy: 3,
+		SerfConfig: serfConfig,
 	}
 }

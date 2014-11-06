@@ -1,6 +1,7 @@
 package libring
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 
@@ -14,44 +15,52 @@ type Cluster struct {
 	memberMap   map[string]*serf.Member
 	ring        *ring
 	memberMutex sync.Mutex
-	serf        *serf.Serf
+	Serf        *serf.Serf
 	serfEvents  chan serf.Event
 }
 
-func NewCluster(config Config) *Cluster {
-	memberMap := make(map[string]*serf.Member)
-	ring := &ring{members: make([]*serf.Member, 0, 0)}
-	memberMutex := sync.Mutex{}
-	serfEvents := make(chan serf.Event, 256)
+func NewCluster(config Config) (*Cluster, error) {
+	if config.SerfConfig == nil {
+		return nil, fmt.Errorf("Config.SerfConfig cannot be nil")
+	}
+	if config.SerfConfig.EventCh != nil {
+		return nil, fmt.Errorf("SerfConfig.EventCh must be nil (try using Config.SerfEvents instead)")
+	}
 
-	serfConfig := serf.DefaultConfig()
-	serfConfig.EventCh = serfEvents
-	nodeSerf, _ := serf.Create(serfConfig)
+	memberMap := make(map[string]*serf.Member)
+	memberMutex := sync.Mutex{}
+
+	ring := &ring{members: make([]*serf.Member, 0, 0)}
+
+	serfEvents := make(chan serf.Event, 256)
+	config.SerfConfig.EventCh = serfEvents
+	nodeSerf, err := serf.Create(config.SerfConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to create serf: %v", err)
+	}
+
 	exit := make(chan bool)
 
-	return &Cluster{
+	cluster := &Cluster{
 		exit:        exit,
 		config:      config,
 		memberMap:   memberMap,
 		ring:        ring,
 		memberMutex: memberMutex,
 		serfEvents:  serfEvents,
-		serf:        nodeSerf,
+		Serf:        nodeSerf,
 	}
-}
 
-// Sets serf metadata.
-// See http://godoc.org/github.com/hashicorp/serf/serf#Serf.SetTags for more
-// information
-func (c *Cluster) SetTags(tags map[string]string) error {
-	logger.Info("Setting node tags: %v", tags)
-	return c.serf.SetTags(tags)
+	return cluster, nil
 }
 
 // Starts the Serf protocol and begins listening for Serf events.
 func (c *Cluster) Run() {
 	logger.Info("Running node")
-	c.joinSerfCluster()
+
+	if len(c.config.BootstrapHosts) > 0 {
+		c.Serf.Join(c.config.BootstrapHosts, true)
+	}
 
 	for {
 		select {
@@ -67,7 +76,7 @@ func (c *Cluster) Run() {
 // Gracefully leaves the Serf cluster and terminates background tasks
 func (c *Cluster) Stop() {
 	logger.Info("Stopping node")
-	c.leaveSerfCluster()
+	c.Serf.Leave()
 	c.exit <- true
 	<-c.exit
 }
@@ -90,16 +99,6 @@ func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
 	return c.ring.membersForPartition(partition)
 }
 
-func (c *Cluster) joinSerfCluster() {
-	if len(c.config.BootstrapHosts) > 0 {
-		c.serf.Join(c.config.BootstrapHosts, true)
-	}
-}
-
-func (c *Cluster) leaveSerfCluster() {
-	c.serf.Leave()
-}
-
 func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *ring) {
 	for partition := uint(0); partition < c.config.Partitions; partition++ {
 		old_members := old_ring.membersForPartition(partition)
@@ -114,10 +113,10 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *
 					break
 				}
 
-				if old_member != nil && old_member.Name == c.serf.LocalMember().Name {
+				if old_member != nil && old_member.Name == c.Serf.LocalMember().Name {
 					// ...but isn't any longer
 					new_member := new_ring.member(partition, replica)
-					if new_member == nil || new_member.Name != c.serf.LocalMember().Name {
+					if new_member == nil || new_member.Name != c.Serf.LocalMember().Name {
 						event := ReleaseEvent{
 							Partition: partition,
 							Replica:   replica,
@@ -140,10 +139,10 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *
 					break
 				}
 
-				if new_member != nil && new_member.Name == c.serf.LocalMember().Name {
+				if new_member != nil && new_member.Name == c.Serf.LocalMember().Name {
 					// ...but didn't used to be
 					old_member := old_ring.member(partition, replica)
-					if old_member == nil || old_member.Name != c.serf.LocalMember().Name {
+					if old_member == nil || old_member.Name != c.Serf.LocalMember().Name {
 						event := AcquireEvent{
 							Partition: partition,
 							Replica:   replica,
@@ -220,6 +219,10 @@ func (c *Cluster) handleSerfEvent(e serf.Event) {
 	default:
 		logger.Warning("Unhandled Serf event: %#v", e)
 	}
+
+	if c.config.SerfEvents != nil {
+		c.config.SerfEvents <- e
+	}
 }
 
 func (c *Cluster) recomputeRing() {
@@ -246,6 +249,10 @@ func (c *Cluster) recomputeRing() {
 }
 
 func (c *Cluster) hasWatchedTag(member *serf.Member) bool {
+	if len(c.config.WatchTags) == 0 {
+		return true
+	}
+
 	for tag, re := range c.config.WatchTags {
 		member_tag, ok := member.Tags[tag]
 		if !ok {
