@@ -26,6 +26,10 @@ metadata as a way to filter nodes.  The current state of all cluster members is
 kept in memory, but only members with a matching tag are used for resolving keys
 to members.
 
+`libring` can join Serf clusters running the serf agent (ie running serf but not
+libring).  This can be useful in cases where `libring` is used as a routing
+layer but doesn't run on the hosts being routed to.  
+
 
 ### Key distribution
 
