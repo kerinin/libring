@@ -12,7 +12,7 @@ type Cluster struct {
 	exit        chan bool
 	config      Config
 	memberMap   map[string]*serf.Member
-	ring        *Ring
+	ring        *ring
 	memberMutex sync.Mutex
 	serf        *serf.Serf
 	serfEvents  chan serf.Event
@@ -20,7 +20,7 @@ type Cluster struct {
 
 func NewCluster(config Config) *Cluster {
 	memberMap := make(map[string]*serf.Member)
-	ring := &Ring{members: make([]*serf.Member, 0, 0)}
+	ring := &ring{members: make([]*serf.Member, 0, 0)}
 	memberMutex := sync.Mutex{}
 	serfEvents := make(chan serf.Event, 256)
 
@@ -100,7 +100,7 @@ func (c *Cluster) leaveSerfCluster() {
 	c.serf.Leave()
 }
 
-func (c *Cluster) handleRingChange(event *serf.Event, old_ring *Ring, new_ring *Ring) {
+func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *ring) {
 	for partition := uint(0); partition < c.config.Partitions; partition++ {
 		old_members := old_ring.membersForPartition(partition)
 		new_members := new_ring.membersForPartition(partition)
@@ -232,7 +232,7 @@ func (c *Cluster) recomputeRing() {
 
 	members := make([]*serf.Member, len(keys), len(keys))
 	if len(keys) == 0 {
-		c.ring = &Ring{members: members}
+		c.ring = &ring{members: members}
 		return
 	}
 
@@ -242,7 +242,7 @@ func (c *Cluster) recomputeRing() {
 		members[i], _ = c.memberMap[k]
 	}
 
-	c.ring = &Ring{members: members}
+	c.ring = &ring{members: members}
 }
 
 func (c *Cluster) hasWatchedTag(member *serf.Member) bool {

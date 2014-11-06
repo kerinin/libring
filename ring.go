@@ -14,11 +14,11 @@ import (
 //
 // Used both for fetching serf members and for detecting changes before & after
 // the cluster memberhsip changes.
-type Ring struct {
+type ring struct {
 	members []*serf.Member
 }
 
-func (r Ring) String() string {
+func (r ring) String() string {
 	member_names := make([]string, len(r.members), len(r.members))
 	for i, member := range r.members {
 		member_names[i] = member.Name
@@ -26,12 +26,12 @@ func (r Ring) String() string {
 	return fmt.Sprintf("%v", member_names)
 }
 
-func (r Ring) membersForKey(key string) chan *serf.Member {
+func (r ring) membersForKey(key string) chan *serf.Member {
 	partition := r.partitionForKey(key)
 	return r.membersForPartition(partition)
 }
 
-func (r Ring) membersForPartition(partition uint) chan *serf.Member {
+func (r ring) membersForPartition(partition uint) chan *serf.Member {
 	outCh := make(chan *serf.Member)
 
 	if len(r.members) == 0 {
@@ -51,7 +51,7 @@ func (r Ring) membersForPartition(partition uint) chan *serf.Member {
 	return outCh
 }
 
-func (r Ring) member(partition uint, replica uint) *serf.Member {
+func (r ring) member(partition uint, replica uint) *serf.Member {
 	if len(r.members) == 0 {
 		return nil
 	}
@@ -66,7 +66,7 @@ func (r Ring) member(partition uint, replica uint) *serf.Member {
 	return r.members[index]
 }
 
-func (r Ring) partitionForKey(key string) uint {
+func (r ring) partitionForKey(key string) uint {
 	hasher := fnv.New64a()
 	hasher.Write([]byte(key))
 	key_hash := hasher.Sum64()
