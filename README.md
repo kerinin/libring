@@ -11,6 +11,7 @@ THIS HAS NOT BEEN TESTED AT SCALE!  Serf is a mature and well-tested system,
 however none of the rest of this codebase has been used in large-scale
 production systems.  Caveat emptor.
 
+[API Docs](http://godoc.org/github.com/kerinin/libring)
 
 ## Design
 
