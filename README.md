@@ -98,14 +98,13 @@ config := libring.Config{
   // to serf.Config.EventCh: "Care must be taken that this channel doesn't 
   // block, either by processing the events quick enough or buffering the 
   // channel"
-  SerfEvents make(chan serf.Event),
+  SerfEvents: make(chan serf.Event),
 
   // Channels for receiving notifications when partitions are assigned to the
   // local machine or removed from the local machine.  Events contain the partition 
   // identifier, the 'other' Member, and the serf Event which triggered the 
   // partition to be reassigned.
-  Acquisitions: make(chan AcquireEvent),
-  Releases make(chan ReleaseEvent),
+  Events: make(chan Event),
 }
 ```
 
@@ -115,25 +114,21 @@ Now you can create a cluster and run it.
 cluster := NewCluster(config)
 
 go func() {
-  for acquisition := range config.Acquisitions {
-    // Do whatever needs to be done in here
-    if acquisition.From != nil {
-      fmt.Sprintf("Acquired partition %d, replica %d from %s", acquisition.Partition, acquisition.Replica, acquisition.From.Name)
+  for event := range config.Events {
+    select event.Type {
+    case Acquisition:
+      // Do whatever needs to be done in here
+      if acquisition.From != nil {
+        fmt.Sprintf("Acquired partition %d, replica %d from %s", acquisition.Partition, acquisition.Replica, acquisition.From.Name)
+      }
+    case Release:
+      // Do whatever needs to be done in here
+      if release.To != nil {
+        fmt.Sprintf("Release partition %d, replica %d to %s", acquisition.Partition, acquisition.Replica, acquisition.To.Name)
+      }
     }
   }
 }()
-
-go func() {
-  for release := range config.Releases {
-    // Do whatever needs to be done in here
-    if release.To != nil {
-      fmt.Sprintf("Release partition %d, replica %d to %s", acquisition.Partition, acquisition.Replica, acquisition.To.Name)
-    }
-  }
-}()
-
-// If this host should be part of the cluster, update its tags.
-cluster.SetTags(map[string]string{"ring": "1"})
 
 go cluster.Run()
 ```

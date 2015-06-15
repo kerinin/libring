@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/serf/serf"
 	"github.com/kerinin/libring"
 )
@@ -15,8 +16,7 @@ func main() {
 	config.WatchTags = map[string]*regexp.Regexp{"ring": regexp.MustCompile(`active`)}
 	config.Partitions = 8
 	config.Redundancy = 2
-	config.Acquisitions = make(chan libring.AcquireEvent)
-	config.Releases = make(chan libring.ReleaseEvent)
+	config.Events = make(chan libring.Event)
 	config.SerfEvents = make(chan serf.Event)
 
 	// See if there's an existing Serf clsuter to join
@@ -27,32 +27,32 @@ func main() {
 	// Create the cluster
 	cluster, err := libring.NewCluster(config)
 	if err != nil {
-		logger.Error("Unable to create cluster: %v", err)
+		logrus.Error("Unable to create cluster: %v", err)
 		return
 	}
 
 	// Start listening for cluster events
 	go func() {
-		for acquisition := range config.Acquisitions {
-			if acquisition.From == nil {
-				logger.Info("Partition %d/%d acquired", acquisition.Partition, acquisition.Replica)
-			} else {
-				logger.Info("Partition %d/%d acquired from %s", acquisition.Partition, acquisition.Replica, acquisition.From.Name)
-			}
-		}
-	}()
-	go func() {
-		for release := range config.Releases {
-			if release.To == nil {
-				logger.Info("Partition %d/%d released", release.Partition, release.Replica)
-			} else {
-				logger.Info("Partition %d/%d released to %s", release.Partition, release.Replica, release.To.Name)
+		for event := range config.Events {
+			switch event.Type {
+			case libring.Acquisition:
+				if event.From == nil {
+					logrus.Infof("Partition %d/%d acquired", event.Partition, event.Replica)
+				} else {
+					logrus.Infof("Partition %d/%d acquired from %s", event.Partition, event.Replica, event.From.Name)
+				}
+			case libring.Release:
+				if event.To == nil {
+					logrus.Infof("Partition %d/%d released", event.Partition, event.Replica)
+				} else {
+					logrus.Infof("Partition %d/%d released to %s", event.Partition, event.Replica, event.To.Name)
+				}
 			}
 		}
 	}()
 	go func() {
 		for event := range config.SerfEvents {
-			logger.Info("Serf fired event: %v", event)
+			logrus.Infof("Serf fired event: %v", event)
 		}
 	}()
 
@@ -73,5 +73,5 @@ func main() {
 	time.Sleep(2 * time.Second)
 	cluster.Stop()
 
-	logger.Info("Exiting")
+	logrus.Info("Exiting")
 }

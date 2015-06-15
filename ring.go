@@ -19,11 +19,11 @@ type ring struct {
 }
 
 func (r ring) String() string {
-	member_names := make([]string, len(r.members), len(r.members))
+	memberNames := make([]string, len(r.members), len(r.members))
 	for i, member := range r.members {
-		member_names[i] = member.Name
+		memberNames[i] = member.Name
 	}
-	return fmt.Sprintf("%v", member_names)
+	return fmt.Sprintf("%v", memberNames)
 }
 
 func (r ring) membersForKey(key string) chan *serf.Member {
@@ -69,7 +69,7 @@ func (r ring) member(partition uint, replica uint) *serf.Member {
 func (r ring) partitionForKey(key string) uint {
 	hasher := fnv.New64a()
 	hasher.Write([]byte(key))
-	key_hash := hasher.Sum64()
+	keyHash := hasher.Sum64()
 
-	return uint(jump.Hash(key_hash, len(r.members)))
+	return uint(jump.Hash(keyHash, len(r.members)))
 }
