@@ -53,11 +53,10 @@ type Config struct {
 
 // DefaultConfig returns a Config with sane default values.
 func DefaultConfig() Config {
-	serfConfig := serf.DefaultConfig()
-
 	return Config{
 		Partitions: 512,
 		Redundancy: 3,
-		SerfConfig: serfConfig,
+		SerfConfig: serf.DefaultConfig(),
+		Events:     make(chan Event),
 	}
 }
