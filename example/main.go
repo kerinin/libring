@@ -5,16 +5,12 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/serf/serf"
 	"github.com/kerinin/libring"
-	"github.com/op/go-logging"
 )
 
-var logger = logging.MustGetLogger("libring.example")
-
 func main() {
-	logging.SetLevel(logging.DEBUG, "libring.example")
-
 	// Setup the config.  Could also use libring.DefaultConfig()
 	config := libring.DefaultConfig()
 	config.WatchTags = map[string]*regexp.Regexp{"ring": regexp.MustCompile(`active`)}
@@ -31,7 +27,7 @@ func main() {
 	// Create the cluster
 	cluster, err := libring.NewCluster(config)
 	if err != nil {
-		logger.Error("Unable to create cluster: %v", err)
+		logrus.Error("Unable to create cluster: %v", err)
 		return
 	}
 
@@ -41,22 +37,22 @@ func main() {
 			switch event.Type {
 			case libring.Acquisition:
 				if event.From == nil {
-					logger.Info("Partition %d/%d acquired", event.Partition, event.Replica)
+					logrus.Infof("Partition %d/%d acquired", event.Partition, event.Replica)
 				} else {
-					logger.Info("Partition %d/%d acquired from %s", event.Partition, event.Replica, event.From.Name)
+					logrus.Infof("Partition %d/%d acquired from %s", event.Partition, event.Replica, event.From.Name)
 				}
 			case libring.Release:
 				if event.To == nil {
-					logger.Info("Partition %d/%d released", event.Partition, event.Replica)
+					logrus.Infof("Partition %d/%d released", event.Partition, event.Replica)
 				} else {
-					logger.Info("Partition %d/%d released to %s", event.Partition, event.Replica, event.To.Name)
+					logrus.Infof("Partition %d/%d released to %s", event.Partition, event.Replica, event.To.Name)
 				}
 			}
 		}
 	}()
 	go func() {
 		for event := range config.SerfEvents {
-			logger.Info("Serf fired event: %v", event)
+			logrus.Infof("Serf fired event: %v", event)
 		}
 	}()
 
@@ -77,5 +73,5 @@ func main() {
 	time.Sleep(2 * time.Second)
 	cluster.Stop()
 
-	logger.Info("Exiting")
+	logrus.Info("Exiting")
 }

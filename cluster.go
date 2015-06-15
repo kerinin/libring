@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/serf/serf"
 )
 
@@ -17,10 +18,15 @@ type Cluster struct {
 	memberMutex sync.Mutex
 	Serf        *serf.Serf
 	serfEvents  chan serf.Event
+	logger      *logrus.Logger
 }
 
 // NewCluster returns a new cluster with the given config
 func NewCluster(config Config) (*Cluster, error) {
+	logger := logrus.New()
+	logger.Out = config.LogOutput
+	logger.Level = logrus.Level(config.LogLevel)
+
 	if config.SerfConfig == nil {
 		return nil, fmt.Errorf("Config.SerfConfig cannot be nil")
 	}
@@ -50,6 +56,7 @@ func NewCluster(config Config) (*Cluster, error) {
 		memberMutex: memberMutex,
 		serfEvents:  serfEvents,
 		Serf:        nodeSerf,
+		logger:      logger,
 	}
 
 	return cluster, nil
@@ -57,7 +64,7 @@ func NewCluster(config Config) (*Cluster, error) {
 
 // Run starts the Serf protocol and begins listening for Serf events.
 func (c *Cluster) Run() {
-	logger.Info("Running node")
+	c.logger.Info("Running node")
 
 	if len(c.config.BootstrapHosts) > 0 {
 		c.Serf.Join(c.config.BootstrapHosts, true)
@@ -76,7 +83,7 @@ func (c *Cluster) Run() {
 
 // Stop gracefully leaves the Serf cluster and terminates background tasks
 func (c *Cluster) Stop() {
-	logger.Info("Stopping node")
+	c.logger.Info("Stopping node")
 	c.Serf.Leave()
 	c.exit <- true
 	<-c.exit
@@ -90,14 +97,14 @@ func (c *Cluster) Stop() {
 // The first N members in the channel can be seen as a key's "preference set" as
 // described in the dynamo paper.
 func (c *Cluster) MembersForKey(key string) chan *serf.Member {
-	logger.Info("Getting members for key: %s", key)
+	c.logger.Infof("Getting members for key: %s", key)
 	return c.ring.membersForKey(key)
 }
 
 // MembersForPartition does the same as MembersForKey, but takes a partition
 // rather than a key
 func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
-	logger.Info("Getting members for partition: %d", partition)
+	c.logger.Infof("Getting members for partition: %d", partition)
 	return c.ring.membersForPartition(partition)
 }
 
@@ -201,27 +208,27 @@ func (c *Cluster) removeEventMembers(e serf.Event) {
 func (c *Cluster) handleSerfEvent(e serf.Event) {
 	switch e.EventType() {
 	case serf.EventMemberJoin:
-		logger.Debug("Handling member join event")
+		c.logger.Debug("Handling member join event")
 		go c.addEventMembers(e)
 
 	case serf.EventMemberLeave:
-		logger.Debug("Handling graceful member exit event")
+		c.logger.Debug("Handling graceful member exit event")
 		go c.removeEventMembers(e)
 
 	case serf.EventMemberFailed:
-		logger.Debug("Handling unresponsive member event")
+		c.logger.Debug("Handling unresponsive member event")
 		go c.updateEventMembers(e)
 
 	case serf.EventMemberUpdate:
-		logger.Debug("Handling member metadata update event")
+		c.logger.Debug("Handling member metadata update event")
 		go c.updateEventMembers(e)
 
 	case serf.EventMemberReap:
-		logger.Debug("Handling forced member exit event")
+		c.logger.Debug("Handling forced member exit event")
 		go c.removeEventMembers(e)
 
 	default:
-		logger.Warning("Unhandled Serf event: %#v", e)
+		c.logger.Warnf("Unhandled Serf event: %#v", e)
 	}
 
 	if c.config.SerfEvents != nil {

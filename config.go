@@ -1,6 +1,8 @@
 package libring
 
 import (
+	"io"
+	"os"
 	"regexp"
 
 	"github.com/hashicorp/serf/serf"
@@ -49,6 +51,13 @@ type Config struct {
 	// identifier, the 'other' Member, and the serf Event which triggered the
 	// partition to be reassigned.
 	Events chan Event
+
+	// LogOutput is the location to write logs to. If this is not set,
+	// logs will go to stderr.
+	LogOutput io.Writer
+
+	// LogLevel: Panic = 0, Fatal, Error, Warn, Info, Debug = 5
+	LogLevel uint8
 }
 
 // DefaultConfig returns a Config with sane default values.
@@ -58,5 +67,7 @@ func DefaultConfig() Config {
 		Redundancy: 3,
 		SerfConfig: serf.DefaultConfig(),
 		Events:     make(chan Event),
+		LogOutput:  os.Stderr,
+		LogLevel:   2,
 	}
 }
