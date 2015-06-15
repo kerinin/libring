@@ -7,16 +7,20 @@ import (
 
 	"github.com/hashicorp/serf/serf"
 	"github.com/kerinin/libring"
+	"github.com/op/go-logging"
 )
 
+var logger = logging.MustGetLogger("libring.example")
+
 func main() {
+	logging.SetLevel(logging.DEBUG, "libring.example")
+
 	// Setup the config.  Could also use libring.DefaultConfig()
 	config := libring.DefaultConfig()
 	config.WatchTags = map[string]*regexp.Regexp{"ring": regexp.MustCompile(`active`)}
 	config.Partitions = 8
 	config.Redundancy = 2
-	config.Acquisitions = make(chan libring.AcquireEvent)
-	config.Releases = make(chan libring.ReleaseEvent)
+	config.Events = make(chan libring.Event)
 	config.SerfEvents = make(chan serf.Event)
 
 	// See if there's an existing Serf clsuter to join
@@ -33,20 +37,20 @@ func main() {
 
 	// Start listening for cluster events
 	go func() {
-		for acquisition := range config.Acquisitions {
-			if acquisition.From == nil {
-				logger.Info("Partition %d/%d acquired", acquisition.Partition, acquisition.Replica)
-			} else {
-				logger.Info("Partition %d/%d acquired from %s", acquisition.Partition, acquisition.Replica, acquisition.From.Name)
-			}
-		}
-	}()
-	go func() {
-		for release := range config.Releases {
-			if release.To == nil {
-				logger.Info("Partition %d/%d released", release.Partition, release.Replica)
-			} else {
-				logger.Info("Partition %d/%d released to %s", release.Partition, release.Replica, release.To.Name)
+		for event := range config.Events {
+			switch event.Type {
+			case libring.Acquisition:
+				if event.From == nil {
+					logger.Info("Partition %d/%d acquired", event.Partition, event.Replica)
+				} else {
+					logger.Info("Partition %d/%d acquired from %s", event.Partition, event.Replica, event.From.Name)
+				}
+			case libring.Release:
+				if event.To == nil {
+					logger.Info("Partition %d/%d released", event.Partition, event.Replica)
+				} else {
+					logger.Info("Partition %d/%d released to %s", event.Partition, event.Replica, event.To.Name)
+				}
 			}
 		}
 	}()

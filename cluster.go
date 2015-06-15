@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
-// The primary libring interface
+// Cluster is the primary libring interface
 type Cluster struct {
 	exit        chan bool
 	config      Config
@@ -19,6 +19,7 @@ type Cluster struct {
 	serfEvents  chan serf.Event
 }
 
+// NewCluster returns a new cluster with the given config
 func NewCluster(config Config) (*Cluster, error) {
 	if config.SerfConfig == nil {
 		return nil, fmt.Errorf("Config.SerfConfig cannot be nil")
@@ -54,7 +55,7 @@ func NewCluster(config Config) (*Cluster, error) {
 	return cluster, nil
 }
 
-// Starts the Serf protocol and begins listening for Serf events.
+// Run starts the Serf protocol and begins listening for Serf events.
 func (c *Cluster) Run() {
 	logger.Info("Running node")
 
@@ -73,7 +74,7 @@ func (c *Cluster) Run() {
 	}
 }
 
-// Gracefully leaves the Serf cluster and terminates background tasks
+// Stop gracefully leaves the Serf cluster and terminates background tasks
 func (c *Cluster) Stop() {
 	logger.Info("Stopping node")
 	c.Serf.Leave()
@@ -81,7 +82,7 @@ func (c *Cluster) Stop() {
 	<-c.exit
 }
 
-// Returns a channel of Serf members for a given key.  The first member in the
+// MembersForKey returns a channel of Serf members for a given key.  The first member in the
 // channel is "replica 0".  All members of the cluster (including failed nodes)
 // will be written to the channel once, then it will be closed.  Nodes which have
 // left the clsuter gracefully or have been reaped will not be included.
@@ -93,64 +94,67 @@ func (c *Cluster) MembersForKey(key string) chan *serf.Member {
 	return c.ring.membersForKey(key)
 }
 
-// Same as MembersForKey, but takes a partition rather than a key
+// MembersForPartition does the same as MembersForKey, but takes a partition
+// rather than a key
 func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
 	logger.Info("Getting members for partition: %d", partition)
 	return c.ring.membersForPartition(partition)
 }
 
-func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *ring) {
+func (c *Cluster) handleRingChange(event *serf.Event, oldRing *ring, newRing *ring) {
 	for partition := uint(0); partition < c.config.Partitions; partition++ {
-		old_members := old_ring.membersForPartition(partition)
-		new_members := new_ring.membersForPartition(partition)
+		oldMembers := oldRing.membersForPartition(partition)
+		newMembers := newRing.membersForPartition(partition)
 
-		if c.config.Releases != nil {
+		if c.config.Events != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
 
 				// If partition/replica used to be owned by the local node
-				old_member, ok := <-old_members
+				oldMember, ok := <-oldMembers
 				if !ok {
 					break
 				}
 
-				if old_member != nil && old_member.Name == c.Serf.LocalMember().Name {
+				if oldMember != nil && oldMember.Name == c.Serf.LocalMember().Name {
 					// ...but isn't any longer
-					new_member := new_ring.member(partition, replica)
-					if new_member == nil || new_member.Name != c.Serf.LocalMember().Name {
-						event := ReleaseEvent{
+					newMember := newRing.member(partition, replica)
+					if newMember == nil || newMember.Name != c.Serf.LocalMember().Name {
+						event := Event{
+							Type:      Release,
 							Partition: partition,
 							Replica:   replica,
-							To:        new_member,
+							To:        newMember,
 							SerfEvent: event,
 						}
 
-						c.config.Releases <- event
+						c.config.Events <- event
 					}
 				}
 			}
 		}
 
-		if c.config.Acquisitions != nil {
+		if c.config.Events != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
 
 				// If partition/replica is owned by the local node
-				new_member, ok := <-new_members
+				newMember, ok := <-newMembers
 				if !ok {
 					break
 				}
 
-				if new_member != nil && new_member.Name == c.Serf.LocalMember().Name {
+				if newMember != nil && newMember.Name == c.Serf.LocalMember().Name {
 					// ...but didn't used to be
-					old_member := old_ring.member(partition, replica)
-					if old_member == nil || old_member.Name != c.Serf.LocalMember().Name {
-						event := AcquireEvent{
+					oldMember := oldRing.member(partition, replica)
+					if oldMember == nil || oldMember.Name != c.Serf.LocalMember().Name {
+						event := Event{
+							Type:      Acquisition,
 							Partition: partition,
 							Replica:   replica,
-							From:      old_ring.member(partition, replica),
+							From:      oldRing.member(partition, replica),
 							SerfEvent: event,
 						}
 
-						c.config.Acquisitions <- event
+						c.config.Events <- event
 					}
 				}
 			}
@@ -160,38 +164,38 @@ func (c *Cluster) handleRingChange(event *serf.Event, old_ring *ring, new_ring *
 
 func (c *Cluster) addEventMembers(e serf.Event) {
 	c.memberMutex.Lock()
-	old_ring := *c.ring
+	oldRing := *c.ring
 	for _, member := range e.(serf.MemberEvent).Members {
 		c.memberMap[member.Name] = &member
 	}
 	c.recomputeRing()
-	new_ring := *c.ring // caching this to reduce time inside the mutex
+	newRing := *c.ring // caching this to reduce time inside the mutex
 	c.memberMutex.Unlock()
-	c.handleRingChange(&e, &old_ring, &new_ring)
+	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
 func (c *Cluster) updateEventMembers(e serf.Event) {
 	c.memberMutex.Lock()
-	old_ring := *c.ring
+	oldRing := *c.ring
 	for _, member := range e.(serf.MemberEvent).Members {
 		c.memberMap[member.Name] = &member
 	}
 	c.recomputeRing()
-	new_ring := *c.ring // caching this to reduce time inside the mutex
+	newRing := *c.ring // caching this to reduce time inside the mutex
 	c.memberMutex.Unlock()
-	c.handleRingChange(&e, &old_ring, &new_ring)
+	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
 func (c *Cluster) removeEventMembers(e serf.Event) {
 	c.memberMutex.Lock()
-	old_ring := *c.ring
+	oldRing := *c.ring
 	for _, member := range e.(serf.MemberEvent).Members {
 		delete(c.memberMap, member.Name)
 	}
 	c.recomputeRing()
-	new_ring := *c.ring // caching this to reduce time inside the mutex
+	newRing := *c.ring // caching this to reduce time inside the mutex
 	c.memberMutex.Unlock()
-	c.handleRingChange(&e, &old_ring, &new_ring)
+	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
 func (c *Cluster) handleSerfEvent(e serf.Event) {
@@ -254,11 +258,11 @@ func (c *Cluster) hasWatchedTag(member *serf.Member) bool {
 	}
 
 	for tag, re := range c.config.WatchTags {
-		member_tag, ok := member.Tags[tag]
+		memberTag, ok := member.Tags[tag]
 		if !ok {
 			continue
 		}
-		if !re.MatchString(member_tag) {
+		if !re.MatchString(memberTag) {
 			continue
 		}
 
