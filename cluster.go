@@ -96,14 +96,14 @@ func (c *Cluster) Stop() {
 //
 // The first N members in the channel can be seen as a key's "preference set" as
 // described in the dynamo paper.
-func (c *Cluster) MembersForKey(key string) chan *serf.Member {
+func (c *Cluster) MembersForKey(key string) []*serf.Member {
 	c.logger.Infof("Getting members for key: %s", key)
 	return c.ring.membersForKey(key)
 }
 
 // MembersForPartition does the same as MembersForKey, but takes a partition
 // rather than a key
-func (c *Cluster) MembersForPartition(partition uint) chan *serf.Member {
+func (c *Cluster) MembersForPartition(partition uint) []*serf.Member {
 	c.logger.Infof("Getting members for partition: %d", partition)
 	return c.ring.membersForPartition(partition)
 }
@@ -115,26 +115,22 @@ func (c *Cluster) handleRingChange(event *serf.Event, oldRing *ring, newRing *ri
 
 		if c.config.Events != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
-
 				// If partition/replica used to be owned by the local node
-				oldMember, ok := <-oldMembers
-				if !ok {
-					break
-				}
+				for _, oldMember := range oldMembers {
+					if oldMember.Name == c.Serf.LocalMember().Name {
+						// ...but isn't any longer
+						newMember := newRing.member(partition, replica)
+						if newMember == nil || newMember.Name != c.Serf.LocalMember().Name {
+							event := Event{
+								Type:      Release,
+								Partition: partition,
+								Replica:   replica,
+								To:        newMember,
+								SerfEvent: event,
+							}
 
-				if oldMember != nil && oldMember.Name == c.Serf.LocalMember().Name {
-					// ...but isn't any longer
-					newMember := newRing.member(partition, replica)
-					if newMember == nil || newMember.Name != c.Serf.LocalMember().Name {
-						event := Event{
-							Type:      Release,
-							Partition: partition,
-							Replica:   replica,
-							To:        newMember,
-							SerfEvent: event,
+							c.config.Events <- event
 						}
-
-						c.config.Events <- event
 					}
 				}
 			}
@@ -142,26 +138,21 @@ func (c *Cluster) handleRingChange(event *serf.Event, oldRing *ring, newRing *ri
 
 		if c.config.Events != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
+				for _, newMember := range newMembers {
+					if newMember != nil && newMember.Name == c.Serf.LocalMember().Name {
+						// ...but didn't used to be
+						oldMember := oldRing.member(partition, replica)
+						if oldMember == nil || oldMember.Name != c.Serf.LocalMember().Name {
+							event := Event{
+								Type:      Acquisition,
+								Partition: partition,
+								Replica:   replica,
+								From:      oldRing.member(partition, replica),
+								SerfEvent: event,
+							}
 
-				// If partition/replica is owned by the local node
-				newMember, ok := <-newMembers
-				if !ok {
-					break
-				}
-
-				if newMember != nil && newMember.Name == c.Serf.LocalMember().Name {
-					// ...but didn't used to be
-					oldMember := oldRing.member(partition, replica)
-					if oldMember == nil || oldMember.Name != c.Serf.LocalMember().Name {
-						event := Event{
-							Type:      Acquisition,
-							Partition: partition,
-							Replica:   replica,
-							From:      oldRing.member(partition, replica),
-							SerfEvent: event,
+							c.config.Events <- event
 						}
-
-						c.config.Events <- event
 					}
 				}
 			}

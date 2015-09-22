@@ -26,29 +26,19 @@ func (r ring) String() string {
 	return fmt.Sprintf("%v", memberNames)
 }
 
-func (r ring) membersForKey(key string) chan *serf.Member {
+func (r ring) membersForKey(key string) []*serf.Member {
 	partition := r.partitionForKey(key)
 	return r.membersForPartition(partition)
 }
 
-func (r ring) membersForPartition(partition uint) chan *serf.Member {
-	outCh := make(chan *serf.Member)
-
-	if len(r.members) == 0 {
-		close(outCh)
-		return outCh
+func (r ring) membersForPartition(partition uint) (members []*serf.Member) {
+	for replica := 0; replica < len(r.members); replica++ {
+		if member := r.member(partition, uint(replica)); member != nil {
+			members = append(members, member)
+		}
 	}
 
-	go func() {
-		for replica := 0; replica < len(r.members); replica++ {
-			if member := r.member(partition, uint(replica)); member != nil {
-				outCh <- member
-			}
-		}
-		close(outCh)
-	}()
-
-	return outCh
+	return members
 }
 
 func (r ring) member(partition uint, replica uint) *serf.Member {
