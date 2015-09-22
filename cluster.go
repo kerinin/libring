@@ -217,7 +217,7 @@ func (c *Cluster) handleSerfEvent(e serf.Event) {
 
 	case serf.EventMemberFailed:
 		c.logger.Debug("Handling unresponsive member event")
-		go c.updateEventMembers(e)
+		go c.removeEventMembers(e)
 
 	case serf.EventMemberUpdate:
 		c.logger.Debug("Handling member metadata update event")
