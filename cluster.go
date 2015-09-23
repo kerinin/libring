@@ -200,23 +200,23 @@ func (c *Cluster) handleSerfEvent(e serf.Event) {
 	switch e.EventType() {
 	case serf.EventMemberJoin:
 		c.logger.Debug("Handling member join event")
-		go c.addEventMembers(e)
+		c.addEventMembers(e)
 
 	case serf.EventMemberLeave:
 		c.logger.Debug("Handling graceful member exit event")
-		go c.removeEventMembers(e)
+		c.removeEventMembers(e)
 
 	case serf.EventMemberFailed:
 		c.logger.Debug("Handling unresponsive member event")
-		go c.removeEventMembers(e)
+		c.removeEventMembers(e)
 
 	case serf.EventMemberUpdate:
 		c.logger.Debug("Handling member metadata update event")
-		go c.updateEventMembers(e)
+		c.updateEventMembers(e)
 
 	case serf.EventMemberReap:
 		c.logger.Debug("Handling forced member exit event")
-		go c.removeEventMembers(e)
+		c.removeEventMembers(e)
 
 	default:
 		c.logger.Warnf("Unhandled Serf event: %#v", e)
