@@ -3,7 +3,6 @@ package libring
 import (
 	"fmt"
 	"sort"
-	"sync"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/hashicorp/serf/serf"
@@ -11,14 +10,13 @@ import (
 
 // Cluster is the primary libring interface
 type Cluster struct {
-	exit        chan bool
-	config      Config
-	memberMap   map[string]*serf.Member
-	ring        *ring
-	memberMutex sync.Mutex
-	Serf        *serf.Serf
-	serfEvents  chan serf.Event
-	logger      *logrus.Logger
+	exit       chan bool
+	config     Config
+	memberMap  map[string]*serf.Member
+	ring       *ring
+	Serf       *serf.Serf
+	serfEvents chan serf.Event
+	logger     *logrus.Logger
 }
 
 // NewCluster returns a new cluster with the given config
@@ -35,7 +33,6 @@ func NewCluster(config Config) (*Cluster, error) {
 	}
 
 	memberMap := make(map[string]*serf.Member)
-	memberMutex := sync.Mutex{}
 
 	ring := &ring{members: make([]*serf.Member, 0, 0)}
 
@@ -49,14 +46,13 @@ func NewCluster(config Config) (*Cluster, error) {
 	exit := make(chan bool)
 
 	cluster := &Cluster{
-		exit:        exit,
-		config:      config,
-		memberMap:   memberMap,
-		ring:        ring,
-		memberMutex: memberMutex,
-		serfEvents:  serfEvents,
-		Serf:        nodeSerf,
-		logger:      logger,
+		exit:       exit,
+		config:     config,
+		memberMap:  memberMap,
+		ring:       ring,
+		serfEvents: serfEvents,
+		Serf:       nodeSerf,
+		logger:     logger,
 	}
 
 	return cluster, nil
@@ -161,38 +157,38 @@ func (c *Cluster) handleRingChange(event *serf.Event, oldRing *ring, newRing *ri
 }
 
 func (c *Cluster) addEventMembers(e serf.Event) {
-	c.memberMutex.Lock()
 	oldRing := *c.ring
+
 	for _, member := range e.(serf.MemberEvent).Members {
 		c.memberMap[member.Name] = &member
 	}
 	c.recomputeRing()
-	newRing := *c.ring // caching this to reduce time inside the mutex
-	c.memberMutex.Unlock()
+	newRing := *c.ring
+
 	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
 func (c *Cluster) updateEventMembers(e serf.Event) {
-	c.memberMutex.Lock()
 	oldRing := *c.ring
+
 	for _, member := range e.(serf.MemberEvent).Members {
 		c.memberMap[member.Name] = &member
 	}
 	c.recomputeRing()
-	newRing := *c.ring // caching this to reduce time inside the mutex
-	c.memberMutex.Unlock()
+	newRing := *c.ring
+
 	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
 func (c *Cluster) removeEventMembers(e serf.Event) {
-	c.memberMutex.Lock()
 	oldRing := *c.ring
+
 	for _, member := range e.(serf.MemberEvent).Members {
 		delete(c.memberMap, member.Name)
 	}
 	c.recomputeRing()
-	newRing := *c.ring // caching this to reduce time inside the mutex
-	c.memberMutex.Unlock()
+
+	newRing := *c.ring
 	c.handleRingChange(&e, &oldRing, &newRing)
 }
 
