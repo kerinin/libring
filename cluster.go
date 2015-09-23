@@ -237,7 +237,7 @@ func (c *Cluster) recomputeRing() {
 		return
 	}
 
-	sort.StringSlice(keys).Sort()
+	sort.Strings(keys)
 
 	for i, k := range keys {
 		members[i], _ = c.memberMap[k]
