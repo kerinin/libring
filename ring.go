@@ -26,15 +26,15 @@ func (r ring) String() string {
 	return fmt.Sprintf("%v", memberNames)
 }
 
-func (r ring) membersForKey(key string) []*serf.Member {
+func (r ring) membersForKey(key string) []serf.Member {
 	partition := r.partitionForKey(key)
 	return r.membersForPartition(partition)
 }
 
-func (r ring) membersForPartition(partition uint) (members []*serf.Member) {
+func (r ring) membersForPartition(partition uint) (members []serf.Member) {
 	for replica := 0; replica < len(r.members); replica++ {
 		if member := r.member(partition, uint(replica)); member != nil {
-			members = append(members, member)
+			members = append(members, *member)
 		}
 	}
 
