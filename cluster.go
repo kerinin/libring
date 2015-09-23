@@ -109,6 +109,14 @@ func (c *Cluster) handleRingChange(event *serf.Event, oldRing *ring, newRing *ri
 		oldMembers := oldRing.membersForPartition(partition)
 		newMembers := newRing.membersForPartition(partition)
 
+		if len(oldMembers) > int(c.config.Redundancy) {
+			oldMembers = oldMembers[:c.config.Redundancy]
+		}
+
+		if len(newMembers) > int(c.config.Redundancy) {
+			newMembers = newMembers[:c.config.Redundancy]
+		}
+
 		if c.config.Events != nil {
 			for replica := uint(0); replica < c.config.Redundancy; replica++ {
 				// If partition/replica used to be owned by the local node
