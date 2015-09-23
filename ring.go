@@ -15,7 +15,8 @@ import (
 // Used both for fetching serf members and for detecting changes before & after
 // the cluster memberhsip changes.
 type ring struct {
-	members []*serf.Member
+	partitionCount uint
+	members        []*serf.Member
 }
 
 func (r ring) String() string {
@@ -61,5 +62,5 @@ func (r ring) partitionForKey(key string) uint {
 	hasher.Write([]byte(key))
 	keyHash := hasher.Sum64()
 
-	return uint(jump.Hash(keyHash, len(r.members)))
+	return uint(keyHash) % r.partitionCount
 }

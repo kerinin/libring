@@ -34,7 +34,7 @@ func NewCluster(config Config) (*Cluster, error) {
 
 	memberMap := make(map[string]*serf.Member)
 
-	ring := &ring{members: make([]*serf.Member, 0, 0)}
+	ring := &ring{members: make([]*serf.Member, 0, 0), partitionCount: config.Partitions}
 
 	serfEvents := make(chan serf.Event, 256)
 	config.SerfConfig.EventCh = serfEvents
@@ -241,7 +241,7 @@ func (c *Cluster) recomputeRing() {
 
 	members := make([]*serf.Member, len(keys), len(keys))
 	if len(keys) == 0 {
-		c.ring = &ring{members: members}
+		c.ring = &ring{members: members, partitionCount: c.config.Partitions}
 		return
 	}
 
@@ -251,7 +251,7 @@ func (c *Cluster) recomputeRing() {
 		members[i], _ = c.memberMap[k]
 	}
 
-	c.ring = &ring{members: members}
+	c.ring = &ring{members: members, partitionCount: c.config.Partitions}
 }
 
 func (c *Cluster) hasWatchedTag(member *serf.Member) bool {
