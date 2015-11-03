@@ -34,7 +34,11 @@ func NewCluster(config Config) (*Cluster, error) {
 
 	memberMap := make(map[string]*serf.Member)
 
-	ring := &ring{members: make([]*serf.Member, 0, 0), partitionCount: config.Partitions}
+	ring := &ring{
+		distribution:   config.PartitionDistribution,
+		members:        make([]*serf.Member, 0, 0),
+		partitionCount: config.Partitions,
+	}
 
 	serfEvents := make(chan serf.Event, 256)
 	config.SerfConfig.EventCh = serfEvents

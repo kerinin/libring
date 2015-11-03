@@ -8,6 +8,13 @@ import (
 	"github.com/hashicorp/serf/serf"
 )
 
+type DistributionMethod uint8
+
+const (
+	ConsistentHashing DistributionMethod = iota
+	Uniform
+)
+
 // Config stores configuration values for a libring Cluster
 type Config struct {
 	// Specify a set of tag/values which must be present on a Serf member to be
@@ -19,6 +26,19 @@ type Config struct {
 	// Join the Serf cluster that these hosts are part of.  Can be pointed at a
 	// load balancer if you hostnames are dynamically assigned.
 	BootstrapHosts []string
+
+	// PartitionDistribution is the method used to distribute partitions across
+	// hosts.
+	//
+	// * ConsistentHashing (Default) - Minimizes the number of partitions which
+	//   need to be moved as the ring grows or shrinks. However, if the number
+	//   partitions is small they may be distributed poorly across hosts.
+	//
+	// * Uniform - Distributes partitions evenly across the hosts at the cost
+	//   of having to move more partitions when the ring grows or shrinks. May
+	//   be desirable if moving partitions is cheap and ConsistentHashing is
+	//   distributing partitions poorly.
+	PartitionDistribution DistributionMethod
 
 	// The number of partitions to divide the keyspace into.  This value should be
 	// an order of maginitude larger than the number of members you expect to
@@ -63,11 +83,12 @@ type Config struct {
 // DefaultConfig returns a Config with sane default values.
 func DefaultConfig() Config {
 	return Config{
-		Partitions: 512,
-		Redundancy: 3,
-		SerfConfig: serf.DefaultConfig(),
-		Events:     make(chan Event),
-		LogOutput:  os.Stderr,
-		LogLevel:   2,
+		PartitionDistribution: ConsistentHashing,
+		Partitions:            512,
+		Redundancy:            3,
+		SerfConfig:            serf.DefaultConfig(),
+		Events:                make(chan Event),
+		LogOutput:             os.Stderr,
+		LogLevel:              2,
 	}
 }
