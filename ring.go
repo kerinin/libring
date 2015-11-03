@@ -15,6 +15,7 @@ import (
 // Used both for fetching serf members and for detecting changes before & after
 // the cluster memberhsip changes.
 type ring struct {
+	distribution   DistributionMethod
 	partitionCount uint
 	members        []*serf.Member
 }
@@ -46,15 +47,22 @@ func (r ring) member(partition uint, replica uint) *serf.Member {
 	if len(r.members) == 0 {
 		return nil
 	}
+
 	if uint(len(r.members)) <= replica {
 		return nil
 	}
 
-	rotation := uint(jump.Hash(uint64(partition), len(r.members)))
+	var rotation uint
+	switch r.distribution {
+	case ConsistentHashing:
+		rotation = uint(jump.Hash(uint64(partition), len(r.members)))
+	case Uniform:
+		rotation = partition % uint(len(r.members))
+	}
 
 	index := (rotation + replica) % uint(len(r.members))
-
 	return r.members[index]
+
 }
 
 func (r ring) partitionForKey(key string) uint {
